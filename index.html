@@ -14,26 +14,45 @@
 <meta name="referrer" content="no-referrer">
 <title>엑셀 손익 대시보드</title>
 <style>
-  /* 화면: 검정 배경 + 형광 분홍 글자 (인쇄는 아래 @media print 에서 흰 바탕으로 되돌림) */
   :root {
-    color-scheme: dark;
-    --pink: #ff3cc8;
-    --bg: #000000;
-    --surface: #000000;
-    --text: var(--pink);
-    --text2: var(--pink);
-    --muted: var(--pink);
-    --grid: #2b2b29;
-    --axis: #5a1d4a;
-    --border: #7a1f62;
-    --seq: #3987e5;
-    --seq-soft: #184f95;
-    --crit: var(--pink);
-    --good-text: var(--pink);
+    color-scheme: light;
+    --bg: #f4f4f1;
+    --surface: #fcfcfb;
+    --text: #0b0b0b;
+    --text2: #52514e;
+    --muted: #6d6c67;
+    --grid: #e6e5e0;
+    --axis: #b9b8b1;
+    --border: #dcdad3;
+    --seq: #2a78d6;
+    --seq-soft: #cde2fb;
+    --crit: #d03b3b;
+    --good-text: #006300;
     --other: #8b8a85;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --accent-bg: #2a0a20;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    --accent-bg: #eaf2fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #121211;
+      --surface: #1a1a19;
+      --text: #ffffff;
+      --text2: #c3c2b7;
+      --muted: #a09f96;
+      --grid: #2b2b29;
+      --axis: #4a4a46;
+      --border: #33332f;
+      --seq: #3987e5;
+      --seq-soft: #184f95;
+      --crit: #ec6a6a;
+      --good-text: #4cc44c;
+      --other: #8b8a85;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --accent-bg: #172436;
+    }
   }
 
   * { box-sizing: border-box; }
@@ -75,7 +94,7 @@
   }
   button:hover, .btn:hover { border-color: var(--seq); }
   button:focus-visible, .btn:focus-within, select:focus-visible { outline: 2px solid var(--seq); outline-offset: 2px; }
-  .btn.primary, button.primary { background: var(--surface); border-color: var(--text); color: var(--text); font-weight: 700; }
+  .btn.primary, button.primary { background: var(--seq); border-color: var(--seq); color: #fff; }
   input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
   .msg { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
@@ -148,8 +167,8 @@
 
   #tip {
     position: fixed; z-index: 10; pointer-events: none; display: none; white-space: pre;
-    background: var(--bg); color: var(--text); border: 1px solid var(--text); padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5;
-    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    background: var(--text); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
   }
 
   .print-only { display: none; }
