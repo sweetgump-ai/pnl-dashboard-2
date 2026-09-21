@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  데이터 유출 차단(CSP)
+  - connect-src 'none' : fetch / XHR / WebSocket 등 모든 외부 전송 차단
+  - default-src 'none' : 명시하지 않은 모든 로드(이미지·폰트·프레임 등) 차단
+  - script-src 'self'  : 같은 폴더(vendor)의 스크립트만 허용, CDN 불가
+  - form-action 'none' : 폼 전송 차단
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'; object-src 'none'; font-src 'none'; worker-src 'none'; media-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>엑셀 손익 대시보드</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f4f1;
+    --surface: #fcfcfb;
+    --text: #0b0b0b;
+    --text2: #52514e;
+    --muted: #6d6c67;
+    --grid: #e6e5e0;
+    --axis: #b9b8b1;
+    --border: #dcdad3;
+    --seq: #2a78d6;
+    --seq-soft: #cde2fb;
+    --crit: #d03b3b;
+    --good-text: #006300;
+    --other: #8b8a85;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    --accent-bg: #eaf2fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #121211;
+      --surface: #1a1a19;
+      --text: #ffffff;
+      --text2: #c3c2b7;
+      --muted: #a09f96;
+      --grid: #2b2b29;
+      --axis: #4a4a46;
+      --border: #33332f;
+      --seq: #3987e5;
+      --seq-soft: #184f95;
+      --crit: #ec6a6a;
+      --good-text: #4cc44c;
+      --other: #8b8a85;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --accent-bg: #172436;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 56px; }
+
+  header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .privacy { color: var(--text2); font-size: 12.5px; margin: 4px 0 0; }
+  .privacy b { color: var(--good-text); font-weight: 600; }
+
+  /* 파일 올리는 곳 */
+  .drop {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    border: 2px dashed var(--axis); border-radius: 12px; background: var(--surface);
+    padding: 40px 16px; text-align: center; transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--seq); background: var(--accent-bg); }
+  .drop .big { font-size: 17px; font-weight: 600; }
+  .drop .sub { color: var(--text2); }
+  .loaded-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 10px 14px;
+  }
+  .loaded-bar.over { border-color: var(--seq); background: var(--accent-bg); }
+  .loaded-bar .name { font-weight: 600; word-break: break-all; }
+  .loaded-bar .meta { color: var(--text2); font-size: 12.5px; }
+
+  button, .btn {
+    font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 8px; padding: 7px 14px; display: inline-block;
+  }
+  button:hover, .btn:hover { border-color: var(--seq); }
+  button:focus-visible, .btn:focus-within, select:focus-visible { outline: 2px solid var(--seq); outline-offset: 2px; }
+  .btn.primary, button.primary { background: var(--seq); border-color: var(--seq); color: #fff; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  .msg { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+  .msg.error { border-color: var(--crit); color: var(--crit); }
+  .msg.warn { color: var(--text2); }
+  .msg ul { margin: 4px 0 0; padding-left: 18px; }
+
+  /* 필터 */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end;
+    margin: 16px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text2); }
+  select {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; min-width: 140px;
+  }
+  .filters .spacer { flex: 1; }
+
+  /* 카드 */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .k { color: var(--text2); font-size: 12.5px; }
+  .card .v { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card .v small { font-size: 13px; font-weight: 500; color: var(--text2); margin-left: 4px; }
+  .card .s { color: var(--muted); font-size: 12px; }
+
+  section.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  section.panel h2 { font-size: 15px; margin: 0 0 2px; }
+  section.panel .desc { color: var(--text2); font-size: 12.5px; margin: 0 0 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid2 > section.panel { margin-bottom: 0; }
+  .grid2 { margin-bottom: 12px; }
+
+  .chartwrap { overflow-x: auto; }
+  .chartwrap svg { display: block; width: 100%; min-width: 560px; height: auto; }
+  svg text { font-family: inherit; fill: var(--text2); font-size: 11px; }
+  svg text.lbl { fill: var(--text); font-weight: 600; }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+  svg .axis { stroke: var(--axis); stroke-width: 1; }
+  svg .bar { fill: var(--seq); }
+  svg .hit { fill: transparent; }
+  svg .hit:hover + .hoverbg, svg g.col:hover .bar { opacity: .82; }
+
+  /* 채널 구성 */
+  .stack { display: flex; gap: 2px; height: 30px; margin: 4px 0 12px; }
+  .stack i { display: block; min-width: 2px; border-radius: 3px; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+
+  /* 표 */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  th { color: var(--text2); font-weight: 500; font-size: 12px; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  td.name, th.name { text-align: left; }
+  td.rank { width: 28px; color: var(--muted); text-align: left; }
+  td.name .sub { color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  tr:last-child td { border-bottom: none; }
+  .barcell { width: 26%; min-width: 80px; }
+  .barcell div { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .barcell i { display: block; height: 100%; background: var(--seq); border-radius: 4px; }
+  .neg { color: var(--crit); font-weight: 600; }
+  .none { display: flex; align-items: center; gap: 8px; padding: 14px 4px; color: var(--good-text); font-weight: 600; }
+  .callout { background: var(--accent-bg); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
+  .callout b { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--text2); font-size: 12.5px; }
+  .empty { padding: 28px 8px; text-align: center; color: var(--text2); }
+
+  #tip {
+    position: fixed; z-index: 10; pointer-events: none; display: none; white-space: pre;
+    background: var(--text); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+
+  .print-only { display: none; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 820px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .grid2 { grid-template-columns: 1fr; }
+    .card .v { font-size: 22px; }
+  }
+
+  /* 보고서 인쇄: 버튼·필터·파일 올리는 곳은 빼고 표와 차트만 */
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    :root {
+      color-scheme: light;
+      --bg: #fff; --surface: #fff; --text: #0b0b0b; --text2: #444; --muted: #666;
+      --grid: #e2e2df; --axis: #b0afa8; --border: #cfcdc6; --seq: #2a78d6; --crit: #d03b3b; --good-text: #006300;
+      --accent-bg: #eef4fc;
+      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { background: #fff; font-size: 11px; }
+    .wrap { max-width: none; padding: 0; }
+    .no-print, #tip { display: none !important; }
+    .print-only { display: block; }
+    .cards { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .card .v { font-size: 19px; }
+    .grid2 { grid-template-columns: 1fr; }
+    .card, section.panel { break-inside: avoid; page-break-inside: avoid; }
+    .chartwrap { overflow: visible; }
+    .chartwrap svg { min-width: 0; }
+    details { display: none; }
+    .print-head h1 { font-size: 18px; }
+    .print-head p { margin: 2px 0 12px; color: #444; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top no-print">
+    <div>
+      <h1>엑셀 손익 대시보드</h1>
+      <p class="privacy"><b>🔒 데이터는 이 브라우저 밖으로 나가지 않습니다.</b> 파일은 화면 안에서만 읽고, 서버로 보내거나 저장하지 않습니다.</p>
+    </div>
+  </header>
+
+  <div class="print-only print-head">
+    <h1>엑셀 손익 보고서</h1>
+    <p id="printMeta"></p>
+  </div>
+
+  <!-- 파일 올리는 곳 -->
+  <div id="dropBig" class="drop no-print">
+    <div class="big">엑셀 파일을 여기로 끌어다 놓으세요</div>
+    <div class="sub">시트 이름 “품목손익” · 3행이 머리글인 .xlsx 파일</div>
+    <label class="btn primary">파일 선택<input type="file" id="fileBig" accept=".xlsx,.xlsm,.xls"></label>
+  </div>
+  <div id="loadedBar" class="loaded-bar no-print hidden">
+    <div>
+      <div class="name" id="fileName"></div>
+      <div class="meta" id="fileMeta"></div>
+    </div>
+    <label class="btn">다른 파일 열기<input type="file" id="fileSmall" accept=".xlsx,.xlsm,.xls"></label>
+  </div>
+  <div id="msg" class="msg hidden" role="alert"></div>
+  <noscript><div class="msg error">이 대시보드는 JavaScript가 필요합니다.</div></noscript>
+
+  <main id="dash" class="hidden">
+    <div class="filters no-print">
+      <label>연도<select id="fYear"></select></label>
+      <label>채널<select id="fChannel"></select></label>
+      <label>대분류<select id="fMajor"></select></label>
+      <button type="button" id="btnReset">필터 초기화</button>
+      <span class="spacer"></span>
+      <button type="button" id="btnPrint" class="primary">보고서 인쇄</button>
+    </div>
+
+    <div class="cards" id="cards"></div>
+
+    <section class="panel" id="pMonthly"></section>
+
+    <div class="grid2">
+      <section class="panel" id="pChannel"></section>
+      <section class="panel" id="pItems"></section>
+    </div>
+
+    <section class="panel" id="pNeg"></section>
+    <section class="panel" id="pCust"></section>
+  </main>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+'use strict';
+
+/* ───────── 설정 ───────── */
+const SHEET_NAME = '품목손익';
+const HEADER_ROW = 2;            // 0부터 세어 3행 = 진짜 머리글
+const MAX_LIST = 30;             // 마이너스 품목 표 최대 줄 수
+const SERIES_VARS = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
+
+const TEXT_COLS = { ch:'채널', team:'팀', part:'파트', cust:'고객명', item:'품목명', brand:'브랜드명', major:'대분류', mid:'중분류', minor:'소분류' };
+const NUM_COLS  = { price:'판매단가', cost:'매입단가', qty:'수량', gr:'GR', tta:'TTA', nnr:'Net Net Revenue', vcogs:'Variable COGS', vdc:'Variable DC', mc:'Marginal Contribution' };
+const REQUIRED  = ['연도','월','채널','고객명','품목명','대분류'];
+
+/* ───────── 상태 ───────── */
+let ALL = [];                    // 읽어 들인 전체 행
+let CH_RANK = new Map();         // 채널 → 색 순번 (전체 NNR 기준, 필터가 바뀌어도 고정)
+let FILE = '';
+const F = { y: '', ch: '', major: '' };
+
+/* ───────── 유틸 ───────── */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase();
+const cleanText = v => v == null ? '' : String(v).replace(/\s+/g, ' ').trim();
+
+function toNum(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v).trim();
+  if (!s || s === '-') return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[,\s%₩원]/g, '');
+  const n = Number(s);
+  if (!isFinite(n)) return null;
+  return neg ? -n : n;
+}
+function toInt(v) {
+  if (typeof v === 'number') return isFinite(v) ? Math.trunc(v) : null;
+  const m = String(v == null ? '' : v).match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+const fmtM = v => {                       // 원 → 백만원, 천 단위 쉼표
+  const n = Math.round(v / 1e6);
+  return (n === 0 ? 0 : n).toLocaleString('ko-KR');
+};
+const fmtPct = r => (r == null || !isFinite(r)) ? '-' : (r * 100).toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const ratio = (a, b) => b === 0 ? null : a / b;
+const yLabel = y => y ? y + '년' : '연도 미상';
+
+/* ───────── 엑셀 읽기 (브라우저 안에서만) ───────── */
+function findHeaderRow(matrix) {
+  const known = new Set([...Object.values(TEXT_COLS), ...Object.values(NUM_COLS), '연도', '월'].map(norm));
+  const score = i => (matrix[i] || []).reduce((n, c) => n + (known.has(norm(c)) ? 1 : 0), 0);
+  if (score(HEADER_ROW) >= 4) return HEADER_ROW;
+  let best = -1, bestScore = 0;
+  for (let i = 0; i < Math.min(matrix.length, 12); i++) {
+    const s = score(i);
+    if (s > bestScore) { best = i; bestScore = s; }
+  }
+  return bestScore >= 4 ? best : -1;
+}
+
+function parseWorkbook(wb) {
+  const name = wb.SheetNames.find(n => n === SHEET_NAME) || wb.SheetNames.find(n => n.trim() === SHEET_NAME);
+  if (!name) throw new Error('“' + SHEET_NAME + '” 시트를 찾지 못했습니다. 이 파일의 시트: ' + wb.SheetNames.map(n => '“' + n + '”').join(', '));
+  const matrix = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true });
+  const hi = findHeaderRow(matrix);
+  if (hi < 0) throw new Error('머리글 행을 찾지 못했습니다. 3행에 “연도, 월, 채널 …” 머리글이 있는지 확인해 주세요.');
+
+  const head = matrix[hi].map(norm);
+  const at = n => head.indexOf(norm(n));
+  const ix = { y: at('연도'), m: at('월') };
+  for (const [k, n] of Object.entries(TEXT_COLS)) ix[k] = at(n);
+  for (const [k, n] of Object.entries(NUM_COLS)) ix[k] = at(n);
+
+  const notes = [];
+  const missing = REQUIRED.filter(n => at(n) < 0);
+  if (missing.length) notes.push('없는 열: ' + missing.join(', ') + ' — 해당 항목은 “미상”으로 처리됩니다.');
+  if (ix.nnr < 0 && ix.gr < 0) notes.push('NNR 열도 GR 열도 없어 매출이 0으로 계산됩니다.');
+  else if (ix.nnr < 0) notes.push('“Net Net Revenue” 열이 없어 GR − TTA 로 계산했습니다.');
+  if (ix.mc < 0) notes.push('“Marginal Contribution” 열이 없어 NNR − Variable COGS − Variable DC 로 계산했습니다.');
+
+  const rows = [];
+  let skipped = 0;
+  for (let i = hi + 1; i < matrix.length; i++) {
+    const row = matrix[i];
+    if (!row || row.every(v => v == null || String(v).trim() === '')) continue;   // 완전히 빈 줄
+    const g = k => ix[k] < 0 ? null : row[ix[k]];
+    const r = { y: toInt(g('y')) || 0, m: toInt(g('m')) || 0 };
+    for (const k of Object.keys(TEXT_COLS)) r[k] = cleanText(g(k));               // 고객명 앞뒤 공백 제거 포함
+    const qty = toNum(g('qty'));
+    r.qty = qty == null ? 0 : qty;                                                // 수량 0인 행도 그대로 유지
+    // 매입단가·판매단가는 비어 있어도 오류 없이 넘어감 (지표 계산에 쓰지 않음)
+    const gr = toNum(g('gr')), tta = toNum(g('tta'));
+    const nnrCol = toNum(g('nnr')), mcCol = toNum(g('mc'));
+    const vc = toNum(g('vcogs')) || 0, vdc = toNum(g('vdc')) || 0;
+    r.nnr = nnrCol != null ? nnrCol : (gr || 0) - (tta || 0);                     // 있으면 엑셀 값, 없으면 GR − TTA
+    r.mc  = mcCol  != null ? mcCol  : r.nnr - vc - vdc;                           // 있으면 엑셀 값, 없으면 NNR − COGS − DC
+    if (!r.y && !r.m && !r.ch && !r.cust && !r.item) { skipped++; continue; }     // 합계 줄 등
+    rows.push(r);
+  }
+  if (!rows.length) throw new Error('읽을 수 있는 데이터 행이 없습니다.');
+  return { rows, notes, skipped, sheet: name };
+}
+
+/* ───────── 집계 ───────── */
+function group(rows, keyFn, init) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = keyFn(r);
+    let a = map.get(k);
+    if (!a) { a = Object.assign({ key: k, nnr: 0, mc: 0, n: 0 }, init ? init(r) : {}); map.set(k, a); }
+    a.nnr += r.nnr; a.mc += r.mc; a.n++;
+  }
+  return [...map.values()];
+}
+const filtered = () => ALL.filter(r =>
+  (!F.y || String(r.y) === F.y) && (!F.ch || r.ch === F.ch) && (!F.major || r.major === F.major));
+
+/* ───────── 화면 그리기 ───────── */
+function niceScale(min, max, n = 4) {
+  if (max === min) max = min + 1;
+  const raw = (max - min) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag;
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step, ticks = [];
+  for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Math.round(t / step) * step);
+  return { lo, hi, ticks };
+}
+function barPath(x, base, w, end, r) {          // 데이터 끝만 둥글게, 기준선 쪽은 직각
+  const h = Math.abs(end - base);
+  if (h < 0.5) return `M${x} ${base}h${w}`;
+  r = Math.min(r, h, w / 2);
+  const up = end < base, d = up ? 1 : -1;
+  return `M${x} ${base}V${end + d * r}Q${x} ${end} ${x + r} ${end}H${x + w - r}Q${x + w} ${end} ${x + w} ${end + d * r}V${base}Z`;
+}
+const pctSpan = (mc, nnr) => {
+  const p = ratio(mc, nnr);
+  if (p == null) return mc < 0 ? '<span class="neg">▼ -</span>' : '-';
+  return p < 0 ? `<span class="neg">▼ ${fmtPct(p)}</span>` : fmtPct(p);
+};
+const isNeg = a => { const p = ratio(a.mc, a.nnr); return p == null ? a.mc < 0 : p < 0; };
+
+function renderCards(rows, T) {
+  const custs = new Set(rows.filter(r => r.cust).map(r => r.cust));
+  const mcp = ratio(T.mc, T.nnr);
+  $('#cards').innerHTML = `
+    <div class="card"><div class="k">총 NNR</div><div class="v">${fmtM(T.nnr)}<small>백만원</small></div><div class="s">GR − TTA</div></div>
+    <div class="card"><div class="k">총 MC</div><div class="v">${fmtM(T.mc)}<small>백만원</small></div><div class="s">NNR − Variable COGS − Variable DC</div></div>
+    <div class="card"><div class="k">MC%</div><div class="v">${mcp == null ? '-' : fmtPct(mcp)}</div><div class="s">총 MC ÷ 총 NNR</div></div>
+    <div class="card"><div class="k">거래처 수</div><div class="v">${custs.size.toLocaleString('ko-KR')}<small>곳</small></div><div class="s">${rows.length.toLocaleString('ko-KR')}행 기준</div></div>`;
+}
+
+function renderMonthly(rows) {
+  const pts = group(rows, r => r.y * 100 + r.m).sort((a, b) => a.key - b.key);
+  const multiYear = new Set(pts.map(p => Math.floor(p.key / 100))).size > 1;
+  pts.forEach(p => {
+    const y = Math.floor(p.key / 100), m = p.key % 100;
+    p.full = (y ? y + '년 ' : '') + (m ? m + '월' : '월 미상');
+    p.short = m ? (multiYear && y ? String(y).slice(2) + '.' + String(m).padStart(2, '0') : m + '월') : '미상';
+    p.v = p.nnr / 1e6;
+  });
+  const head = '<h2>월별 NNR 추이</h2><p class="desc">단위: 백만원</p>';
+  if (!pts.length) { $('#pMonthly').innerHTML = head + '<div class="empty">표시할 데이터가 없습니다.</div>'; return; }
+
+  const W = 760, H = 280, L = 62, R = 14, Tp = 22, B = 34;
+  const sc = niceScale(Math.min(0, ...pts.map(p => p.v)), Math.max(0, ...pts.map(p => p.v)));
+  const yy = v => Tp + (sc.hi - v) / (sc.hi - sc.lo) * (H - Tp - B);
+  const slot = (W - L - R) / pts.length, bw = Math.min(46, slot * 0.62), y0 = yy(0);
+  const every = Math.ceil(pts.length / 18);
+  const maxI = pts.reduce((b, p, i) => p.v > pts[b].v ? i : b, 0), lastI = pts.length - 1;
+
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="월별 NNR 막대 차트 (백만원)">`;
+  for (const t of sc.ticks) {
+    s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy(t)}" y2="${yy(t)}"/>` +
+         `<text x="${L - 8}" y="${yy(t) + 4}" text-anchor="end">${t.toLocaleString('ko-KR')}</text>`;
+  }
+  s += `<line class="axis" x1="${L}" x2="${W - R}" y1="${y0}" y2="${y0}"/>`;
+  pts.forEach((p, i) => {
+    const cx = L + slot * i + slot / 2, x = cx - bw / 2;
+    const tip = `${p.full}\nNNR ${fmtM(p.nnr)}백만원\nMC ${fmtM(p.mc)}백만원 (${fmtPct(ratio(p.mc, p.nnr))})`;
+    s += `<g class="col"><path class="bar" d="${barPath(x, y0, bw, yy(p.v), 4)}"/>` +
+         `<rect class="hit" x="${L + slot * i}" y="${Tp}" width="${slot}" height="${H - Tp - B}" data-tip="${esc(tip)}"/></g>`;
+    if (i % every === 0 || i === lastI && every === 1) s += `<text x="${cx}" y="${H - B + 18}" text-anchor="middle">${esc(p.short)}</text>`;
+    if (i === maxI || i === lastI) {
+      const ly = p.v >= 0 ? yy(p.v) - 6 : yy(p.v) + 14;
+      s += `<text class="lbl" x="${cx}" y="${ly}" text-anchor="middle">${fmtM(p.nnr)}</text>`;
+    }
+  });
+  s += '</svg>';
+
+  const table = `<details><summary>표로 보기</summary><table><thead><tr><th>월</th><th>NNR</th><th>MC</th><th>MC%</th></tr></thead><tbody>` +
+    pts.map(p => `<tr><td>${esc(p.full)}</td><td>${fmtM(p.nnr)}</td><td>${fmtM(p.mc)}</td><td>${pctSpan(p.mc, p.nnr)}</td></tr>`).join('') +
+    '</tbody></table></details>';
+  $('#pMonthly').innerHTML = head + `<div class="chartwrap">${s}</div>` + table;
+}
+
+function chColor(ch) {
+  const i = CH_RANK.get(ch);
+  return i != null && i < SERIES_VARS.length ? `var(${SERIES_VARS[i]})` : 'var(--other)';
+}
+function renderChannel(rows, T) {
+  const head = '<h2>채널별 구성</h2><p class="desc">NNR 기준 비중 · 단위: 백만원</p>';
+  const list = group(rows, r => r.ch || '(채널 없음)').sort((a, b) => b.nnr - a.nnr);
+  if (!list.length) { $('#pChannel').innerHTML = head + '<div class="empty">표시할 데이터가 없습니다.</div>'; return; }
+
+  // 색이 배정된 채널(상위 8개)은 그대로, 나머지는 "기타"로 묶어 회색 하나로 표시
+  const shown = [], other = { key: '기타', nnr: 0, mc: 0, n: 0, isOther: true };
+  for (const a of list) {
+    const i = CH_RANK.get(a.key);
+    if (i != null && i < SERIES_VARS.length) shown.push(a);
+    else { other.nnr += a.nnr; other.mc += a.mc; other.n++; }
+  }
+  if (other.n) shown.push(other);
+
+  const pos = shown.filter(a => a.nnr > 0), posSum = pos.reduce((n, a) => n + a.nnr, 0);
+  const bar = posSum > 0
+    ? `<div class="stack" role="img" aria-label="채널별 NNR 비중">` +
+      pos.map(a => `<i style="flex:${a.nnr};background:${a.isOther ? 'var(--other)' : chColor(a.key)}" data-tip="${esc(a.key + '\nNNR ' + fmtM(a.nnr) + '백만원 (' + fmtPct(a.nnr / T.nnr) + ')')}"></i>`).join('') + '</div>'
+    : '';
+  const tbl = '<table><thead><tr><th>채널</th><th>NNR</th><th>비중</th><th>MC%</th></tr></thead><tbody>' +
+    shown.map(a => `<tr><td class="name"><span class="swatch" style="background:${a.isOther ? 'var(--other)' : chColor(a.key)}"></span>${esc(a.key)}${a.isOther ? `<span class="sub">${a.n}개 채널</span>` : ''}</td>` +
+      `<td>${fmtM(a.nnr)}</td><td>${fmtPct(ratio(a.nnr, T.nnr))}</td><td>${pctSpan(a.mc, a.nnr)}</td></tr>`).join('') +
+    '</tbody></table>';
+  $('#pChannel').innerHTML = head + bar + tbl;
+}
+
+function renderItems(rows, T, items) {
+  const head = '<h2>품목 TOP 10</h2><p class="desc">NNR 기준 · 단위: 백만원</p>';
+  const top = [...items].sort((a, b) => b.nnr - a.nnr).slice(0, 10);
+  if (!top.length) { $('#pItems').innerHTML = head + '<div class="empty">표시할 데이터가 없습니다.</div>'; return; }
+  const max = Math.max(...top.map(a => a.nnr), 1);
+  $('#pItems').innerHTML = head + '<table><thead><tr><th></th><th class="name">품목</th><th></th><th>NNR</th><th>MC%</th></tr></thead><tbody>' +
+    top.map((a, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(a.key)}${a.brand ? `<span class="sub">${esc(a.brand)}</span>` : ''}</td>` +
+      `<td class="barcell"><div><i style="width:${Math.max(0, a.nnr / max * 100)}%"></i></div></td>` +
+      `<td>${fmtM(a.nnr)}</td><td>${pctSpan(a.mc, a.nnr)}</td></tr>`).join('') + '</tbody></table>';
+}
+
+function renderNeg(items) {
+  const head = '<h2>MC%가 마이너스인 품목</h2><p class="desc">MC가 손실인 품목 · 손실이 큰 순서 · 단위: 백만원</p>';
+  const neg = items.filter(isNeg).sort((a, b) => a.mc - b.mc);
+  if (!neg.length) {
+    $('#pNeg').innerHTML = head + '<div class="none"><span aria-hidden="true">✓</span>없음</div>';
+    return;
+  }
+  const shown = neg.slice(0, MAX_LIST);
+  $('#pNeg').innerHTML = head +
+    '<table><thead><tr><th class="name">품목</th><th>NNR</th><th>MC</th><th>MC%</th></tr></thead><tbody>' +
+    shown.map(a => `<tr><td class="name">${esc(a.key)}${a.brand ? `<span class="sub">${esc(a.brand)}</span>` : ''}</td><td>${fmtM(a.nnr)}</td><td class="neg">${fmtM(a.mc)}</td><td>${pctSpan(a.mc, a.nnr)}</td></tr>`).join('') +
+    '</tbody></table>' +
+    `<p class="note">총 ${neg.length.toLocaleString('ko-KR')}개 품목${neg.length > shown.length ? ` 중 MC 손실이 큰 ${shown.length}개만 표시` : ''}</p>`;
+}
+
+function renderCust(rows, T) {
+  const head = '<h2>거래처 TOP 10</h2><p class="desc">NNR 기준 · 단위: 백만원 · 고객명 앞뒤 공백을 지우고 같은 거래처로 합산</p>';
+  const list = group(rows.filter(r => r.cust), r => r.cust).sort((a, b) => b.nnr - a.nnr);
+  if (!list.length) { $('#pCust').innerHTML = head + '<div class="empty">표시할 데이터가 없습니다.</div>'; return; }
+  const top = list.slice(0, 10), first = top[0];
+  const top10 = top.reduce((n, a) => n + a.nnr, 0);
+  const max = Math.max(first.nnr, 1);
+  const callout = T.nnr > 0
+    ? `<div class="callout">1위 거래처 <strong>${esc(first.key)}</strong>의 비중 <b>${fmtPct(first.nnr / T.nnr)}</b> <span class="sub" style="color:var(--text2)">· 상위 10곳 합계 ${fmtPct(top10 / T.nnr)}</span></div>`
+    : '<div class="callout">총 NNR이 0 이하여서 비중을 계산할 수 없습니다.</div>';
+  $('#pCust').innerHTML = head + callout +
+    '<table><thead><tr><th></th><th class="name">거래처</th><th></th><th>NNR</th><th>비중</th><th>MC%</th></tr></thead><tbody>' +
+    top.map((a, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(a.key)}</td>` +
+      `<td class="barcell"><div><i style="width:${Math.max(0, a.nnr / max * 100)}%"></i></div></td>` +
+      `<td>${fmtM(a.nnr)}</td><td>${T.nnr > 0 ? fmtPct(a.nnr / T.nnr) : '-'}</td><td>${pctSpan(a.mc, a.nnr)}</td></tr>`).join('') + '</tbody></table>';
+}
+
+function render() {
+  const rows = filtered();
+  const T = rows.reduce((t, r) => (t.nnr += r.nnr, t.mc += r.mc, t), { nnr: 0, mc: 0 });
+  const items = group(rows, r => r.item || '(품목명 없음)', r => ({ brand: r.brand }));
+  renderCards(rows, T);
+  renderMonthly(rows);
+  renderChannel(rows, T);
+  renderItems(rows, T, items);
+  renderNeg(items);
+  renderCust(rows, T);
+  $('#printMeta').textContent = `${FILE} · 조건: 연도 ${F.y ? yLabel(+F.y) : '전체'} / 채널 ${F.ch || '전체'} / 대분류 ${F.major || '전체'} · 출력일 ${new Date().toLocaleDateString('ko-KR')} · 금액 단위 백만원`;
+}
+
+/* ───────── 필터 ───────── */
+function fillSelect(sel, values, labelFn, current) {
+  sel.innerHTML = '<option value="">전체</option>' +
+    values.map(v => `<option value="${esc(v)}">${esc(labelFn ? labelFn(v) : v)}</option>`).join('');
+  sel.value = current;
+}
+function setupFilters() {
+  const years = [...new Set(ALL.map(r => r.y))].sort((a, b) => a - b).map(String);
+  const uniq = k => [...new Set(ALL.map(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  fillSelect($('#fYear'), years, v => yLabel(+v), F.y);
+  fillSelect($('#fChannel'), uniq('ch'), null, F.ch);
+  fillSelect($('#fMajor'), uniq('major'), null, F.major);
+}
+$('#fYear').addEventListener('change', e => { F.y = e.target.value; render(); });
+$('#fChannel').addEventListener('change', e => { F.ch = e.target.value; render(); });
+$('#fMajor').addEventListener('change', e => { F.major = e.target.value; render(); });
+$('#btnReset').addEventListener('click', () => { F.y = F.ch = F.major = ''; setupFilters(); render(); });
+$('#btnPrint').addEventListener('click', () => window.print());
+
+/* ───────── 파일 받기 ───────── */
+function showMsg(kind, html) {
+  const el = $('#msg');
+  el.className = 'msg ' + kind;
+  el.innerHTML = html;
+}
+const clearMsg = () => { $('#msg').className = 'msg hidden'; $('#msg').innerHTML = ''; };
+
+async function handleFile(file) {
+  clearMsg();
+  if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { showMsg('error', '엑셀 파일(.xlsx)만 열 수 있습니다: ' + esc(file.name)); return; }
+  if (typeof XLSX === 'undefined') { showMsg('error', 'vendor/xlsx.full.min.js 를 불러오지 못했습니다. vendor 폴더가 index.html 옆에 있는지 확인해 주세요.'); return; }
+  try {
+    const buf = await file.arrayBuffer();                       // 브라우저 메모리 안에서만 읽음
+    const wb = XLSX.read(buf, { type: 'array' });
+    const res = parseWorkbook(wb);
+    ALL = res.rows;
+    FILE = file.name;
+    const tot = new Map();
+    for (const r of ALL) tot.set(r.ch || '(채널 없음)', (tot.get(r.ch || '(채널 없음)') || 0) + r.nnr);
+    CH_RANK = new Map([...tot.entries()].sort((a, b) => b[1] - a[1]).map(([k], i) => [k, i]));
+    F.y = F.ch = F.major = '';
+    setupFilters();
+    $('#dropBig').classList.add('hidden');
+    $('#loadedBar').classList.remove('hidden');
+    $('#dash').classList.remove('hidden');
+    $('#fileName').textContent = file.name;
+    $('#fileMeta').textContent = `시트 “${res.sheet}” · ${ALL.length.toLocaleString('ko-KR')}행 읽음` + (res.skipped ? ` · 합계/빈 줄 ${res.skipped}행 제외` : '');
+    if (res.notes.length) showMsg('warn', '확인해 주세요<ul>' + res.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul>');
+    document.title = '손익 대시보드 · ' + file.name;
+    render();
+  } catch (err) {
+    showMsg('error', esc(err && err.message ? err.message : String(err)));
+  }
+}
+for (const id of ['#fileBig', '#fileSmall']) {
+  $(id).addEventListener('change', e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
+}
+// 창 어디에 놓아도 받기 (브라우저가 파일을 그냥 열어 버리는 것도 막음)
+const zones = [$('#dropBig'), $('#loadedBar')];
+let dragDepth = 0;
+const setOver = on => zones.forEach(z => z.classList.toggle('over', on));
+document.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; setOver(true); });
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('dragleave', e => { e.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) setOver(false); });
+document.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; setOver(false);
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+/* ───────── 마우스 올렸을 때 설명 ───────── */
+const tip = $('#tip');
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest && e.target.closest('[data-tip]');
+  if (t) { tip.textContent = t.getAttribute('data-tip'); tip.style.display = 'block'; } else tip.style.display = 'none';
+});
+document.addEventListener('mousemove', e => {
+  if (tip.style.display !== 'block') return;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + 'px';
+  tip.style.top = Math.min(e.clientY + 14, innerHeight - h - 8) + 'px';
+});
+document.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+</script>
+</body>
+</html>
